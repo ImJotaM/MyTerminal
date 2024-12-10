@@ -1,34 +1,59 @@
 #include "Terminal.h"
 
 Terminal::Terminal() {
+	
+	GetScreenData();
 
-	if (!TTF_Init()) {
+	const char* win_title = "";
+	int win_width = 0;
+	int win_height = 0;
+	Vector2 win_position = { };
+	SDL_WindowFlags win_flags = 0x0;
+
+	win_title = "Terminal";
+	win_width = screen.width / 2;
+	win_height = screen.height / 2;
+	win_position.x = (screen.width - win_width) / 2;
+	win_position.y = (screen.height - win_height) / 2;
+	win_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+
+	window.Configure(win_title, win_width, win_height, win_position, win_flags);
+	window.Create();
+
+	renderer = SDL_CreateRenderer(window, NULL);
+	if (!renderer) {
 		SDL_LogError(SDL_LOG_PRIORITY_ERROR, SDL_GetError());
+		TTF_Quit();
+		SDL_Quit();
 		std::exit(EXIT_FAILURE);
 	}
 
-	renderer = window.GetRenderer();
-
-	bgcolor = { 0xc, 0xc, 0xc, 0xff };
-
-	textdata.fontsize = 16;
+	textdata.fontsize = 14;
+	textdata.wrapwidth = window.GetWidth();
 	textdata.font = TTF_OpenFont("resources/Segoe UI.ttf", textdata.fontsize);
-
 	if (!textdata.font) {
 		SDL_LogError(SDL_LOG_PRIORITY_INVALID, SDL_GetError());
 	}
+	
+	currentdir = fs::current_path();
+	bgcolor = { 0xc, 0xc, 0xc, 0xff };
+
+}
+
+Terminal::~Terminal() {
+
+	SDL_DestroyTexture(userinput.texture);
+	SDL_DestroyTexture(history.texture);
+	TTF_CloseFont(textdata.font);
+
+	SDL_DestroyRenderer(renderer);
+	window.Destroy();
 
 }
 
 void Terminal::Init() {
 
 	SDL_Event e;
-
-	SDL_Surface* text_surface = nullptr;
-	SDL_Texture* texture = nullptr;
-	SDL_FRect textrect = { };
-
-	userinput = "ImJm\n nanana";
 
 	SDL_StartTextInput(window);
 
@@ -41,7 +66,7 @@ void Terminal::Init() {
 			}
 
 			if (e.type == SDL_EVENT_TEXT_INPUT) {
-				userinput += e.text.text;
+				userinput.text += e.text.text;
 			}
 
 			if (e.key.key == SDLK_ESCAPE && e.type == SDL_EVENT_KEY_DOWN) {
@@ -50,21 +75,67 @@ void Terminal::Init() {
 
 		}
 
-		text_surface = TTF_RenderText_Blended_Wrapped(textdata.font, userinput.c_str(), userinput.size(), { 0xff, 0xff, 0xff, 0xff }, 200);
-		if (text_surface) {
-			texture = SDL_CreateTextureFromSurface(renderer, text_surface);
-			textrect = { 0, 0, static_cast<float>(text_surface->w), static_cast<float>(text_surface->h) };
-			SDL_DestroySurface(text_surface);
-		}
+		window.Clear(renderer, bgcolor);
 
-		window.Clear();
+		DrawHistory();
+		DrawUserInput();
 
-		SDL_RenderTexture(renderer, texture, nullptr, &textrect);
-
-		window.RenderPresent();
+		SDL_RenderPresent(renderer);
 
 	}
 
-	TTF_Quit();
+}
+
+void Terminal::GetScreenData() {
+
+	SDL_Rect displaybounds = { };
+	if (!SDL_GetDisplayBounds(1, &displaybounds)) {
+		SDL_LogError(SDL_LOG_PRIORITY_ERROR, SDL_GetError());
+	}
+
+	screen.width = displaybounds.w;
+	screen.height = displaybounds.h;
+
+}
+
+void Terminal::DrawHistory() {
+
+	if (history.texture) {
+		SDL_DestroyTexture(userinput.texture);
+	}
+	if (history.surface) {
+		SDL_DestroySurface(userinput.surface);
+	}
+
+	history.surface = TTF_RenderText_Blended_Wrapped(textdata.font, history.text.c_str(), history.text.size(), { 0xff, 0xff, 0xff, 0xff }, textdata.wrapwidth);
+	if (history.surface) {
+		history.texture = SDL_CreateTextureFromSurface(renderer, history.surface);
+		history.rect = { 0, 0, static_cast<float>(history.surface->w), static_cast<float>(history.surface->h) };
+		SDL_DestroySurface(history.surface);
+	}
+
+	SDL_RenderTexture(renderer, history.texture, nullptr, &history.rect);
+
+}
+
+void Terminal::DrawUserInput() {
+
+	std::string out = "  " + currentdir.string() + "> " + userinput.text;
+
+	if (userinput.texture) {
+		SDL_DestroyTexture(userinput.texture);
+	}
+	if (userinput.surface) {
+		SDL_DestroySurface(userinput.surface);
+	}
+
+	userinput.surface = TTF_RenderText_Blended_Wrapped(textdata.font, out.c_str(), out.size(), { 0xff, 0xff, 0xff, 0xff }, textdata.wrapwidth - 20);
+	if (userinput.surface) {
+		userinput.texture = SDL_CreateTextureFromSurface(renderer, userinput.surface);
+		userinput.rect = { 0, 0, static_cast<float>(userinput.surface->w), static_cast<float>(userinput.surface->h) };
+		SDL_DestroySurface(userinput.surface);
+	}
+
+	SDL_RenderTexture(renderer, userinput.texture, nullptr, &userinput.rect);
 
 }
