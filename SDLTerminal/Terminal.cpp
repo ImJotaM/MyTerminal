@@ -2,38 +2,33 @@
 
 Terminal::Terminal() {
 
-	renderer = window.GetRenderer();
-
-	bgcolor = { 0xc, 0xc, 0xc, 0xff };
-
-	textdata.fontsize = 16;
-
-}
-
-void Terminal::Init() {
-
 	if (!TTF_Init()) {
 		SDL_LogError(SDL_LOG_PRIORITY_ERROR, SDL_GetError());
 		std::exit(EXIT_FAILURE);
 	}
 
-	TTF_Font* font;
-	font = TTF_OpenFont("resources/Segoe UI.ttf", 16);
+	renderer = window.GetRenderer();
 
-	if (!font) {
+	bgcolor = { 0xc, 0xc, 0xc, 0xff };
+
+	textdata.fontsize = 16;
+	textdata.font = TTF_OpenFont("resources/Segoe UI.ttf", textdata.fontsize);
+
+	if (!textdata.font) {
 		SDL_LogError(SDL_LOG_PRIORITY_INVALID, SDL_GetError());
 	}
 
+}
+
+void Terminal::Init() {
+
 	SDL_Event e;
 
-	std::string text = "Tampa";
 	SDL_Surface* text_surface = nullptr;
+	SDL_Texture* texture = nullptr;
+	SDL_FRect textrect = { };
 
-	text_surface = TTF_RenderText_Blended(font, text.c_str(), text.size(), { 0xff, 0xff, 0xff, 0xff });
-	SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, text_surface);
-
-	SDL_FRect textrect = { 100, 100, text_surface->w, text_surface->h };
-	SDL_DestroySurface(text_surface);
+	userinput = "ImJm\n nanana";
 
 	SDL_StartTextInput(window);
 
@@ -53,6 +48,13 @@ void Terminal::Init() {
 				window.Close();
 			}
 
+		}
+
+		text_surface = TTF_RenderText_Blended_Wrapped(textdata.font, userinput.c_str(), userinput.size(), { 0xff, 0xff, 0xff, 0xff }, 200);
+		if (text_surface) {
+			texture = SDL_CreateTextureFromSurface(renderer, text_surface);
+			textrect = { 0, 0, static_cast<float>(text_surface->w), static_cast<float>(text_surface->h) };
+			SDL_DestroySurface(text_surface);
 		}
 
 		window.Clear();

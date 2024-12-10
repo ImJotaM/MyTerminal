@@ -8,6 +8,8 @@ public:
 	Terminal();
 
 	void Init();
+	template<typename... Args>
+	void Print(const std::string& text, Args... args);
 
 private:
 
@@ -29,3 +31,15 @@ private:
 	std::vector<std::string> history = { };
 
 };
+
+template<typename ...Args>
+inline void Terminal::Print(const std::string& text, Args... args) {
+
+	std::ostringstream stream;
+
+	stream << text;
+	((stream << args), ...);
+
+	history.emplace_back(stream.str());
+
+}
