@@ -40,8 +40,13 @@ private:
 
 	void GetScreenData();
 
+	void UpdateHistory();
+	void UpdateUserInput();
+
 	void DrawHistory();
 	void DrawUserInput();
+
+	std::string PutTextBreak(std::string& text);
 
 };
 
