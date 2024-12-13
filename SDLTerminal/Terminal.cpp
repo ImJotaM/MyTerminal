@@ -30,16 +30,13 @@ Terminal::Terminal() {
 
 	textdata.fontsize = 14;
 	textdata.wrapwidth = window.GetWidth();
-	textdata.font = TTF_OpenFont("resources/Segoe UI.ttf", textdata.fontsize);
+	textdata.font = TTF_OpenFont("resources/CONSOLA.ttf", textdata.fontsize);
 	if (!textdata.font) {
 		SDL_LogError(SDL_LOG_PRIORITY_INVALID, SDL_GetError());
 	}
 	
 	currentdir = fs::current_path();
 	bgcolor = { 0xc, 0xc, 0xc, 0xff };
-
-	UpdateHistory();
-	UpdateUserInput();
 
 }
 
@@ -67,9 +64,7 @@ void Terminal::Init() {
 			}
 
 			if (e.type == SDL_EVENT_TEXT_INPUT) {
-				userinput.text += e.text.text;
-				UpdateHistory();
-				UpdateUserInput();
+				userinput += e.text.text;
 			}
 
 			if (e.key.key == SDLK_ESCAPE && e.type == SDL_EVENT_KEY_DOWN) {
@@ -77,11 +72,31 @@ void Terminal::Init() {
 			}
 
 		}
+		
+		std::string out = "  " + currentdir.string() + "> " + userinput;
+		int mw = 0;
+		size_t ml = 0;
+
+		TTF_MeasureString(textdata.font, out.c_str(), out.size(), textdata.wrapwidth, &mw, &ml);
+
+		if (!out.empty() && out.size() >= ml && mw >= textdata.wrapwidth) {
+			out[ml] = '\n';
+		}
 
 		window.Clear(renderer, bgcolor);
 
-		//DrawHistory();
-		DrawUserInput();
+		SDL_Surface* surface = TTF_RenderText_Blended_Wrapped(textdata.font, out.c_str(), out.size(), WHITE, textdata.wrapwidth + 14);
+		
+		if (surface) {
+
+			SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+			SDL_FRect rect = { 0, 0, surface->w, surface->h };
+			SDL_RenderTexture(renderer, texture, nullptr, &rect);
+			
+			SDL_DestroySurface(surface);
+			SDL_DestroyTexture(texture);
+
+		}
 
 		SDL_RenderPresent(renderer);
 
@@ -101,77 +116,3 @@ void Terminal::GetScreenData() {
 
 }
 
-void Terminal::UpdateHistory() {
-
-	history.surface = TTF_RenderText_Blended_Wrapped(
-		textdata.font,
-		history.text.c_str(),
-		history.text.size(),
-		{ 0xff, 0xff, 0xff, 0xff },
-		textdata.wrapwidth
-	);
-
-	if (history.surface) {
-		SDL_DestroyTexture(history.texture);
-		history.texture = SDL_CreateTextureFromSurface(renderer, history.surface);
-		history.rect = { 0, 0, static_cast<float>(history.surface->w), static_cast<float>(history.surface->h) };
-		SDL_DestroySurface(history.surface);
-	}
-
-}
-
-void Terminal::UpdateUserInput() {
-
-	std::string out = "  " + currentdir.string() + "> ";
-
-	out += PutTextBreak(userinput.text);
-
-	userinput.surface = TTF_RenderText_Blended_Wrapped(
-		textdata.font,
-		out.c_str(),
-		out.size(),
-		{ 0xff, 0xff, 0xff, 0xff },
-		textdata.wrapwidth
-	);
-
-	if (userinput.surface) {
-		SDL_DestroyTexture(userinput.texture);
-		userinput.texture = SDL_CreateTextureFromSurface(renderer, userinput.surface);
-		userinput.rect = { 0, 0, static_cast<float>(userinput.surface->w), static_cast<float>(userinput.surface->h) };
-		SDL_DestroySurface(userinput.surface);
-	}
-
-}
-
-void Terminal::DrawHistory() {
-	SDL_RenderTexture(renderer, history.texture, nullptr, &history.rect);
-}
-
-void Terminal::DrawUserInput() {
-	SDL_RenderTexture(renderer, userinput.texture, nullptr, &userinput.rect);
-}
-
-std::string Terminal::PutTextBreak(std::string& text) {
-	
-	std::string result = text;
-	std::string buf = "";
-
-	int mw = 0;
-
-	for (char c : text) {
-
-		buf += c;
-
-		TTF_MeasureString(textdata.font, buf.c_str(), buf.size(), 0, &mw, nullptr);
-
-		if (mw >= textdata.wrapwidth) {
-			result += buf + '\n';
-			buf = "";
-		}
-
-	}
-
-	std::cout << result << std::endl;
-
-	return result;
-}

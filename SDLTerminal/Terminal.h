@@ -9,8 +9,6 @@ public:
 	~Terminal();
 
 	void Init();
-	template<typename... Args>
-	void Print(const std::string& text, Args... args);
 
 private:
 
@@ -34,29 +32,9 @@ private:
 
 	SDL_Color bgcolor = { 0x0, 0x0, 0x0, 0xff };
 
-	Text userinput = { };
-	Text history = { };
+	std::string userinput = "";
 	fs::path currentdir = "";
 
 	void GetScreenData();
 
-	void UpdateHistory();
-	void UpdateUserInput();
-
-	void DrawHistory();
-	void DrawUserInput();
-
-	std::string PutTextBreak(std::string& text);
-
 };
-
-template<typename ...Args>
-inline void Terminal::Print(const std::string& text, Args... args) {
-
-	std::ostringstream stream;
-
-	stream << text;
-	((stream << args), ...);
-
-	history.text += stream.str();
-}
