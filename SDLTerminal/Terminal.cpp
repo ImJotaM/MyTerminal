@@ -4,20 +4,14 @@ Terminal::Terminal() {
 	
 	GetScreenData();
 
-	const char* win_title = "";
-	int win_width = 0;
-	int win_height = 0;
-	Vector2 win_position = { };
-	SDL_WindowFlags win_flags = 0x0;
+	windata.win_title = "Terminal";
+	windata.win_width = screen.width / 2;
+	windata.win_height = screen.height / 2;
+	windata.win_position.x = (screen.width - windata.win_width) / 2;
+	windata.win_position.y = (screen.height - windata.win_height) / 2;
+	windata.win_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
 
-	win_title = "Terminal";
-	win_width = screen.width / 2;
-	win_height = screen.height / 2;
-	win_position.x = (screen.width - win_width) / 2;
-	win_position.y = (screen.height - win_height) / 2;
-	win_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
-
-	window.Configure(win_title, win_width, win_height, win_position, win_flags);
+	window.Configure(windata.win_title, windata.win_width, windata.win_height, windata.win_position, windata.win_flags);
 	window.Create();
 
 	renderer = SDL_CreateRenderer(window, NULL);
@@ -37,6 +31,15 @@ Terminal::Terminal() {
 	
 	currentdir = fs::current_path();
 	bgcolor = { 0xc, 0xc, 0xc, 0xff };
+
+	columns = windata.win_width / textdata.fontsize;
+	rows = windata.win_height / textdata.fontsize;
+
+	cellmtrx.resize(rows);
+
+	for (std::vector<Cell>& line : cellmtrx) {
+		line.resize(columns);
+	}
 
 }
 
@@ -72,31 +75,8 @@ void Terminal::Init() {
 			}
 
 		}
-		
-		std::string out = "  " + currentdir.string() + "> " + userinput;
-		int mw = 0;
-		size_t ml = 0;
 
-		TTF_MeasureString(textdata.font, out.c_str(), out.size(), textdata.wrapwidth, &mw, &ml);
-
-		if (!out.empty() && out.size() >= ml && mw >= textdata.wrapwidth) {
-			out[ml] = '\n';
-		}
-
-		window.Clear(renderer, bgcolor);
-
-		SDL_Surface* surface = TTF_RenderText_Blended_Wrapped(textdata.font, out.c_str(), out.size(), WHITE, textdata.wrapwidth + 14);
-		
-		if (surface) {
-
-			SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
-			SDL_FRect rect = { 0, 0, surface->w, surface->h };
-			SDL_RenderTexture(renderer, texture, nullptr, &rect);
-			
-			SDL_DestroySurface(surface);
-			SDL_DestroyTexture(texture);
-
-		}
+		DrawCellMatrix();
 
 		SDL_RenderPresent(renderer);
 
@@ -113,6 +93,36 @@ void Terminal::GetScreenData() {
 
 	screen.width = displaybounds.w;
 	screen.height = displaybounds.h;
+
+}
+
+void Terminal::DrawCellMatrix() {
+
+	
+
+	if (cell_surface)
+		SDL_DestroySurface(cell_surface);
+
+	if (cell_texture)
+		SDL_DestroyTexture(cell_texture);
+
+	for (size_t i = 0; i < cellmtrx.size(); i++){
+		std::vector<Cell>& line = cellmtrx[i];
+		for (size_t j = 0; j < line.size(); j++){
+			Cell& cell = line[j];
+			
+			cell_surface = TTF_RenderGlyph_Shaded(textdata.font, cell.character, cell.color, BLACK);
+
+			if (cell_surface) {
+
+				cell_texture = SDL_CreateTextureFromSurface(renderer, cell_surface);
+				SDL_FRect rect = { j * textdata.fontsize, i * textdata.fontsize, cell_surface->w, cell_surface->h };
+				SDL_RenderTexture(renderer, cell_texture, nullptr, &rect);
+
+			}
+
+		}
+	}
 
 }
 
