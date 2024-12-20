@@ -1,5 +1,5 @@
 #pragma once
-#include "Window.h"
+#include "Types.h"
 
 class Terminal {
 
@@ -12,55 +12,81 @@ public:
 
 private:
 
-	Window window;
+	SDL_Window* window = nullptr;
 	SDL_Renderer* renderer = nullptr;
 
 	struct WindowData {
 
-		const char* win_title = "";
-		int win_width = 0;
-		int win_height = 0;
+		const char* title = "";
+		int width = 0;
+		int height = 0;
 
-		Vector2 win_position = { };
-		SDL_WindowFlags win_flags = 0x0;
+		Vector2 position = { };
+		SDL_WindowFlags flags = 0x0;
+
+		bool shouldclose = false;
 
 	} windata;
 
 	struct Screen {
+
 		int width;
 		int height;
+
 	} screen;
 
-	struct TextData {
+	struct FontData {
 
 		int fontsize = 0;
-		int wrapwidth = 0;
 
-		TTF_Font* font = nullptr;
+		int width = 0;
+		int height = 0;
 
-	} textdata;
+		TTF_Font* ttf_font = nullptr;
 
+	} font;
 
-	SDL_Color bgcolor = { 0x0, 0x0, 0x0, 0xff };
+	struct TextCursor {
 
-	std::string userinput = "";
-	fs::path currentdir = "";
+		int x = 0;
+		int y = 0;
+
+		int width = 0;
+		int height = 0;
+
+	} textcursor;
 
 	struct Cell {
 		char character = ' ';
 		SDL_Color color = WHITE;
 	};
 
-	int columns = 80;
-	int rows = 60;
+	std::vector<Cell> cellmtrx = { };
 
-	std::vector<std::vector<Cell>> cellmtrx = { };
+	std::string history = "";
+	std::string userinput = "";
+	fs::path currentdir = "";
+	SDL_Color bgcolor = { 0x0, 0x0, 0x0, 0xff };
+	
+	int columns = 0;
+	int rows = 0;
 
-	SDL_Surface* cell_surface = nullptr;
-	SDL_Texture* cell_texture = nullptr;
+	std::unordered_map<char, SDL_Texture*> charcache;
+
+	std::unordered_map<std::string, std::function<void()>> commandlist;
 
 	void GetScreenData();
+	void CloseWindow();
+	void ClearWindow();
 
+	void UpdateCellMatrix();
 	void DrawCellMatrix();
+	void ClearMatrix();
+
+	void HandleInput();
+
+	void RegisterCommands();
+
+	void COMMAND_CD();
 
 };

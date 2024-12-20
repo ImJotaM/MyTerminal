@@ -90,13 +90,12 @@
   <ItemGroup>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Terminal.cpp" />
-    <ClCompile Include="Window.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Commands.cpp" />
     <ClInclude Include="GlobalLibs.h" />
     <ClInclude Include="Terminal.h" />
     <ClInclude Include="Types.h" />
-    <ClInclude Include="Window.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

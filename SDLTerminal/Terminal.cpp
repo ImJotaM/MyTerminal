@@ -2,53 +2,79 @@
 
 Terminal::Terminal() {
 	
+	if (SDL_Init(SDL_INIT_VIDEO)) {
+		dependencies.SDL_VIDEO = DEP_OK;
+	} else {
+		dependencies.HandleErrors();
+	}
+
+	if (TTF_Init()) {
+		dependencies.SDL_TTF = DEP_OK;
+	}else{
+		dependencies.HandleErrors();
+	}
+
 	GetScreenData();
 
-	windata.win_title = "Terminal";
-	windata.win_width = screen.width / 2;
-	windata.win_height = screen.height / 2;
-	windata.win_position.x = (screen.width - windata.win_width) / 2;
-	windata.win_position.y = (screen.height - windata.win_height) / 2;
-	windata.win_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+	windata.title = "Terminal";
+	windata.width = screen.width / 2;
+	windata.height = screen.height / 2;
+	windata.position.x = (screen.width - windata.width) / 2;
+	windata.position.y = (screen.height - windata.height) / 2;
+	windata.flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
 
-	window.Configure(windata.win_title, windata.win_width, windata.win_height, windata.win_position, windata.win_flags);
-	window.Create();
+	window = SDL_CreateWindow(windata.title, windata.width, windata.height, windata.flags);
+	if (!window) {
+		dependencies.HandleErrors();
+	}
 
 	renderer = SDL_CreateRenderer(window, NULL);
 	if (!renderer) {
-		SDL_LogError(SDL_LOG_PRIORITY_ERROR, SDL_GetError());
-		TTF_Quit();
-		SDL_Quit();
-		std::exit(EXIT_FAILURE);
+		dependencies.HandleErrors();
 	}
 
-	textdata.fontsize = 14;
-	textdata.wrapwidth = window.GetWidth();
-	textdata.font = TTF_OpenFont("resources/CONSOLA.ttf", textdata.fontsize);
-	if (!textdata.font) {
+	font.fontsize = 14;
+	font.ttf_font = TTF_OpenFont("resources/CONSOLA.ttf", font.fontsize);
+	if (!font.ttf_font) {
 		SDL_LogError(SDL_LOG_PRIORITY_INVALID, SDL_GetError());
 	}
 	
 	currentdir = fs::current_path();
 	bgcolor = { 0xc, 0xc, 0xc, 0xff };
 
-	columns = windata.win_width / textdata.fontsize;
-	rows = windata.win_height / textdata.fontsize;
+	SDL_Surface* tmp_font_surface = TTF_RenderGlyph_Shaded(font.ttf_font, ' ', WHITE, BLACK);
+	font.width = tmp_font_surface->w;
+	font.height = tmp_font_surface->h;
+	SDL_DestroySurface(tmp_font_surface);
 
-	cellmtrx.resize(rows);
+	columns = windata.width / font.width;
+	rows = windata.height / font.height;
 
-	for (std::vector<Cell>& line : cellmtrx) {
-		line.resize(columns);
-	}
+	cellmtrx.reserve(columns * rows);
+	cellmtrx.resize(columns * rows, { });
+	
+	textcursor.width = font.width;
+	textcursor.height = font.height;
+
+	RegisterCommands();
 
 }
 
 Terminal::~Terminal() {
 
-	TTF_CloseFont(textdata.font);
+	userinput.clear();
+	history.clear();
+	cellmtrx.clear();
+
+	TTF_CloseFont(font.ttf_font);
+
+	for (auto& [character, texture] : charcache) {
+		SDL_DestroyTexture(texture);
+	}
 
 	SDL_DestroyRenderer(renderer);
-	window.Destroy();
+	SDL_DestroyWindow(window);
+	dependencies.QUIT_ALL();
 
 }
 
@@ -58,29 +84,51 @@ void Terminal::Init() {
 
 	SDL_StartTextInput(window);
 
-	while (!window.shouldClose()) {
+	while (!windata.shouldclose) {
 
 		while (SDL_PollEvent(&e)) {
 
-			if (e.type == SDL_EVENT_QUIT) {
-				window.Close();
+			if ((e.type == SDL_EVENT_QUIT) || (e.key.key == SDLK_ESCAPE && e.type == SDL_EVENT_KEY_DOWN)) {
+				CloseWindow();
 			}
 
 			if (e.type == SDL_EVENT_TEXT_INPUT) {
 				userinput += e.text.text;
 			}
 
-			if (e.key.key == SDLK_ESCAPE && e.type == SDL_EVENT_KEY_DOWN) {
-				window.Close();
+			if (e.key.key == SDLK_BACKSPACE && e.type == SDL_EVENT_KEY_DOWN) {
+				if (!userinput.empty()) {
+					userinput.pop_back();
+				}
+			}
+
+			if (e.key.key == SDLK_RETURN && e.type == SDL_EVENT_KEY_DOWN) {
+				HandleInput();
+				history += currentdir.string() + "> " + userinput + "\n";
+				userinput.clear();
+			}
+
+			if (e.window.type == SDL_EVENT_WINDOW_RESIZED) {
+				windata.width = e.window.data1;
+				windata.height = e.window.data2;
+
+				columns = windata.width / font.width;
+				rows = windata.height / font.height;
 			}
 
 		}
 
+		ClearWindow();
+
+		ClearMatrix();
+		UpdateCellMatrix();
 		DrawCellMatrix();
 
 		SDL_RenderPresent(renderer);
 
 	}
+
+	SDL_StopTextInput(window);
 
 }
 
@@ -96,33 +144,112 @@ void Terminal::GetScreenData() {
 
 }
 
-void Terminal::DrawCellMatrix() {
+void Terminal::CloseWindow() {
+	windata.shouldclose = true;
+}
 
-	
+void Terminal::ClearWindow() {
+	SDL_SetRenderDrawColor(renderer, bgcolor.r, bgcolor.g, bgcolor.b, bgcolor.a);
+	SDL_RenderClear(renderer);
+}
 
-	if (cell_surface)
-		SDL_DestroySurface(cell_surface);
+void Terminal::UpdateCellMatrix() {
 
-	if (cell_texture)
-		SDL_DestroyTexture(cell_texture);
+	Vector2 cursor = { 0, 0 };
+	std::string out = "";
 
-	for (size_t i = 0; i < cellmtrx.size(); i++){
-		std::vector<Cell>& line = cellmtrx[i];
-		for (size_t j = 0; j < line.size(); j++){
-			Cell& cell = line[j];
-			
-			cell_surface = TTF_RenderGlyph_Shaded(textdata.font, cell.character, cell.color, BLACK);
+	out = history + currentdir.string() + "> " + userinput;
 
-			if (cell_surface) {
+	for (char c : out) {
 
-				cell_texture = SDL_CreateTextureFromSurface(renderer, cell_surface);
-				SDL_FRect rect = { j * textdata.fontsize, i * textdata.fontsize, cell_surface->w, cell_surface->h };
-				SDL_RenderTexture(renderer, cell_texture, nullptr, &rect);
+		size_t index = cursor.y * columns + cursor.x;
 
-			}
-
+		if (c == '\n') {
+			cursor.x = 0;
+			cursor.y += 1;
+			continue;
 		}
+
+		cellmtrx[index].character = c;
+		cursor.x += 1;
+		if (cursor.x == columns) {
+			cursor.x = 0;
+			cursor.y += 1;
+		}
+
 	}
 
+	textcursor.x = cursor.x * font.width;
+	textcursor.y = cursor.y * font.height;
+
+}
+
+void Terminal::DrawCellMatrix() {
+
+	Vector2 cursor = { 0, 0 };
+
+	for (Cell& cell : cellmtrx) {
+
+		if (cell.character == '\n')
+			continue;
+
+		if (charcache.find(cell.character) == charcache.end()) {
+
+			SDL_Surface* temp_surface = TTF_RenderGlyph_Shaded(font.ttf_font, cell.character, cell.color, BLACK);
+			if (!temp_surface)
+				continue;
+
+			SDL_Texture* temp_texture = SDL_CreateTextureFromSurface(renderer, temp_surface);
+			SDL_DestroySurface(temp_surface);
+			if (!temp_texture)
+				continue;
+
+			charcache[cell.character] = temp_texture;
+		}
+
+		SDL_FRect rect = { cursor.x * font.width, cursor.y * font.height, font.width, font.height };
+		SDL_RenderTexture(renderer, charcache[cell.character], nullptr, &rect);
+
+		cursor.x += 1;
+		if (cursor.x == columns) {
+			cursor.x = 0;
+			cursor.y += 1;
+		}
+
+	}
+
+	SDL_FRect cursor_rect = { textcursor.x, textcursor.y, textcursor.width, textcursor.height };
+	SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+	SDL_RenderFillRect(renderer, &cursor_rect);
+
+}
+
+void Terminal::ClearMatrix() {
+	
+	cellmtrx.clear();
+	cellmtrx.resize(columns * rows, { });
+
+}
+
+void Terminal::HandleInput() {
+
+	std::vector<std::string> tokens = {};
+
+	std::stringstream ss(userinput);
+	std::string token;
+
+	while (ss >> token) {
+		tokens.push_back(token);
+	}
+
+	auto mapIter = commandlist.find(tokens[0]);
+	if (mapIter != commandlist.end()) {
+		mapIter->second();
+	}
+
+}
+
+void Terminal::RegisterCommands() {
+	commandlist["cd"] = [this]() { COMMAND_CD(); };
 }
 

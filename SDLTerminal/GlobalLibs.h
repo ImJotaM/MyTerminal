@@ -7,5 +7,8 @@
 #include <string>
 #include <sstream>
 #include <filesystem>
+#include <unordered_map>
+#include <functional>
+#include <any>
 
 namespace fs = std::filesystem;
