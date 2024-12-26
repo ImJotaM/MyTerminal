@@ -9,35 +9,38 @@ public:
 	~Terminal();
 
 	void Init();
+	void Print(const std::string& msg, SDL_Color text_color = WHITE);
 
 private:
 
-	SDL_Window* window = nullptr;
 	SDL_Renderer* renderer = nullptr;
 
 	struct WindowData {
 
-		const char* title = "";
-		int width = 0;
-		int height = 0;
+		SDL_Window* sdl_window = nullptr;
 
-		Vector2 position = { };
-		SDL_WindowFlags flags = 0x0;
+		const char* title = "Terminal";
+		int width = 800;
+		int height = 600;
+		Vector2 position = { 0, 0 };
+		const SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
 
 		bool shouldclose = false;
 
-	} windata;
+	} window;
 
-	struct Screen {
+	struct Display {
 
-		int width;
-		int height;
+		int width = 0;
+		int height = 0;
 
-	} screen;
+		float scale = 0;
+
+	} display;
 
 	struct FontData {
 
-		int fontsize = 0;
+		float fontsize = 0;
 
 		int width = 0;
 		int height = 0;
@@ -46,47 +49,31 @@ private:
 
 	} font;
 
-	struct TextCursor {
+	SDL_FRect textCursor = { 0.f, 0.f, 0.f, 0.f };
 
-		int x = 0;
-		int y = 0;
-
-		int width = 0;
-		int height = 0;
-
-	} textcursor;
-
-	struct Cell {
-		char character = ' ';
-		SDL_Color color = WHITE;
-	};
-
-	std::vector<Cell> cellmtrx = { };
-
-	std::string history = "";
+	std::vector<Text> history = { };
 	std::string userinput = "";
 	fs::path currentdir = "";
-	SDL_Color bgcolor = { 0x0, 0x0, 0x0, 0xff };
+	SDL_Color bgcolor = { 0xc, 0xc, 0xc, 0xff };
 	
-	int columns = 0;
-	int rows = 0;
+	std::unordered_map<std::string, std::function<void(int, std::vector<std::string>)>> commandlist;
 
-	std::unordered_map<char, SDL_Texture*> charcache;
-
-	std::unordered_map<std::string, std::function<void()>> commandlist;
-
-	void GetScreenData();
 	void CloseWindow();
 	void ClearWindow();
 
-	void UpdateCellMatrix();
-	void DrawCellMatrix();
-	void ClearMatrix();
+	void UpdateContent(std::vector<Text>& out);
+	void DrawContent();
+
+	SDL_Texture* texture = nullptr;
 
 	void HandleInput();
 
 	void RegisterCommands();
 
-	void COMMAND_CD();
+	void COMMAND_CD(int argc, std::vector<std::string>);
+	void COMMAND_LS(int argc, std::vector<std::string>);
+	void COMMAND_CLS(int argc, std::vector<std::string>);
+	void COMMAND_MKDIR(int argc, std::vector<std::string>);
+	void COMMAND_RM(int argc, std::vector<std::string>);
 
 };
