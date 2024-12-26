@@ -134,8 +134,8 @@ Terminal::Terminal() {
 
 	currentdir = fs::current_path();
 
-	textCursor.w = font.width;
-	textCursor.h = font.height;
+	textCursor.w = static_cast<float>(font.width);
+	textCursor.h = static_cast<float>(font.height);
 
 	RegisterCommands();
 
@@ -145,6 +145,14 @@ Terminal::~Terminal() {
 
 	userinput.clear();
 	history.clear();
+
+	for (TextCache& texture : textCache) {
+		if (texture.texture) {
+			SDL_DestroyTexture(texture.texture);
+		}
+	}
+
+	textCache.clear();
 
 	TTF_CloseFont(font.ttf_font);
 
@@ -165,33 +173,11 @@ void Terminal::Init() {
 	while (!window.shouldclose) {
 
 		while (SDL_PollEvent(&e)) {
-
-			if ((e.type == SDL_EVENT_QUIT) || (e.key.key == SDLK_ESCAPE && e.type == SDL_EVENT_KEY_DOWN)) {
-				CloseWindow();
-			}
-
-			if (e.window.type == SDL_EVENT_WINDOW_RESIZED) {
-				window.width = e.window.data1;
-				window.height = e.window.data2;
-			}
-
-			if (e.type == SDL_EVENT_TEXT_INPUT) {
-				userinput += e.text.text;
-			}
-
-			if (e.key.key == SDLK_BACKSPACE && e.type == SDL_EVENT_KEY_DOWN) {
-				if (!userinput.empty()) {
-					userinput.pop_back();
-				}
-			}
-
-			if (e.key.key == SDLK_RETURN && e.type == SDL_EVENT_KEY_DOWN) {
-				SDL_Color input_color = WHITE;
-				history.emplace_back(currentdir.string() + "> " + userinput + "\n", input_color, bgcolor);
-				HandleInput();
-				userinput.clear();
-			}
-
+			HandleEvents(e);
+		}
+		
+		if (window.shouldclose) {
+			break;
 		}
 
 		ClearWindow();
@@ -210,6 +196,53 @@ void Terminal::Print(const std::string& msg, SDL_Color text_color) {
 	history.emplace_back(msg, text_color, bgcolor);
 }
 
+void Terminal::HandleEvents(SDL_Event& event) {
+
+	switch (event.type) {
+	
+	case SDL_EVENT_QUIT:
+		CloseWindow();
+		break;
+
+	case SDL_EVENT_WINDOW_RESIZED:
+		window.width = event.window.data1;
+		window.height = event.window.data2;
+		break;
+
+	case SDL_EVENT_KEY_DOWN:
+		KeyHandler(event.key);
+		break;
+
+	case SDL_EVENT_TEXT_INPUT:
+		userinput += event.text.text;
+		break;
+
+	}
+
+}
+
+void Terminal::KeyHandler(SDL_KeyboardEvent& key) {
+
+	switch (key.key) {
+
+	case SDLK_ESCAPE:
+		CloseWindow();
+		break;
+
+	case SDLK_BACKSPACE:
+		if (!userinput.empty()) {
+			userinput.pop_back();
+		}
+		break;
+
+	case SDLK_RETURN:
+		HandleInput();
+		break;
+
+	}
+
+}
+
 void Terminal::CloseWindow() {
 	window.shouldclose = true;
 }
@@ -219,7 +252,43 @@ void Terminal::ClearWindow() {
 	SDL_RenderClear(renderer);
 }
 
-void Terminal::UpdateContent(std::vector<Text>& out) {
+void Terminal::UpdateTextCache(const std::vector<Text>& out) {
+
+	for (size_t i = 0; i < out.size(); ++i) {
+		if (i >= textCache.size() || textCache[i].data.text != out[i].text) {
+			if (i >= textCache.size()) {
+				textCache.push_back({ out[i], nullptr });
+			}
+			if (textCache[i].texture) {
+				SDL_DestroyTexture(textCache[i].texture);
+			}
+
+			textCache[i].data = out[i];
+
+			SDL_Surface* temp_surface = TTF_RenderText_Shaded(font.ttf_font, out[i].text.c_str(), out[i].text.size(), out[i].color, out[i].shadecolor);
+			if (!temp_surface)
+				continue;
+			
+			textCache[i].texture = SDL_CreateTextureFromSurface(renderer, temp_surface);
+			if (!textCache[i].texture)
+				continue;
+
+			Vector2f size = { static_cast<float>(temp_surface->w), static_cast<float>(temp_surface->h) };
+			textCache[i].size = size;
+
+			SDL_DestroySurface(temp_surface);
+
+		}
+	}
+
+	while (textCache.size() > out.size()) {
+		SDL_DestroyTexture(textCache.back().texture);
+		textCache.pop_back();
+	}
+
+}
+
+void Terminal::FormatContent(std::vector<Text>& out) {
 
 	size_t maxCharPerLine = window.width / font.width;
 
@@ -266,44 +335,34 @@ void Terminal::DrawContent() {
 
 	Vector2 cursor = { 0, 0 };
 	std::vector<Text> out = { };
-	UpdateContent(out);
+	FormatContent(out);
+	UpdateTextCache(out);
 
 	int mw = 0;
 	
-	for (Text& text : out) {
+	for (const TextCache& cached : textCache) {
 
-		if (text.text.empty()) {
+		if (cached.data.text.empty()) {
 			cursor.y += font.height;
 			continue;
 		}
 
-		TTF_MeasureString(font.ttf_font, text.text.c_str(), text.text.size(), 0, &mw, nullptr);
+		TTF_MeasureString(font.ttf_font, cached.data.text.c_str(), cached.data.text.size(), 0, &mw, nullptr);
 		
-		SDL_Surface* temp_surface = TTF_RenderText_Shaded(font.ttf_font, text.text.c_str(), text.text.size(), text.color, text.shadecolor);
-		if (!temp_surface)
-			continue;
-
-		texture = SDL_CreateTextureFromSurface(renderer, temp_surface);
-		Rect rect = { 0, cursor.y, temp_surface->w, temp_surface->h };
-		SDL_DestroySurface(temp_surface);
-		if (!texture)
-			continue;
+		SDL_FRect frect = { 0.f, static_cast<float>(cursor.y), cached.size.x, cached.size.y };
 		
-		SDL_FRect frect = rect;
-
-		SDL_RenderTexture(renderer, texture, nullptr, &frect);
-		SDL_DestroyTexture(texture);
+		SDL_RenderTexture(renderer, cached.texture, nullptr, &frect);
 
 		cursor.y += font.height;
 
 	}
 
 	if (mw >= window.width) {
-		textCursor.x = 0;
-		textCursor.y = cursor.y;
+		textCursor.x = 0.f;
+		textCursor.y = static_cast<float>(cursor.y);
 	} else {
-		textCursor.x = mw;
-		textCursor.y = cursor.y - font.height;
+		textCursor.x = static_cast<float>(mw);
+		textCursor.y = static_cast<float>(cursor.y - font.height);
 	}
 
 	SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
@@ -312,6 +371,8 @@ void Terminal::DrawContent() {
 }
 
 void Terminal::HandleInput() {
+
+	history.emplace_back(currentdir.string() + "> " + userinput + "\n", WHITE, bgcolor);
 
 	std::vector<std::string> tokens = {};
 
@@ -330,6 +391,8 @@ void Terminal::HandleInput() {
 	if (mapIter != commandlist.end()) {
 		mapIter->second(static_cast<int>(tokens.size()), tokens);
 	}
+
+	userinput.clear();
 
 }
 

@@ -49,6 +49,20 @@ private:
 
 	} font;
 
+	struct Text {
+
+		std::string text = "";
+		SDL_Color color = WHITE;
+		SDL_Color shadecolor = BLACK;
+
+	};
+
+	struct TextCache {
+		Text data = { };
+		SDL_Texture* texture = nullptr;
+		Vector2f size = { 0.f, 0.f };
+	};
+
 	SDL_FRect textCursor = { 0.f, 0.f, 0.f, 0.f };
 
 	std::vector<Text> history = { };
@@ -58,13 +72,17 @@ private:
 	
 	std::unordered_map<std::string, std::function<void(int, std::vector<std::string>)>> commandlist;
 
+	void HandleEvents(SDL_Event& event);
+	void KeyHandler(SDL_KeyboardEvent& key);
+
 	void CloseWindow();
 	void ClearWindow();
 
-	void UpdateContent(std::vector<Text>& out);
-	void DrawContent();
+	std::vector<TextCache> textCache = { };
+	void UpdateTextCache(const std::vector<Text>& out);
 
-	SDL_Texture* texture = nullptr;
+	void FormatContent(std::vector<Text>& out);
+	void DrawContent();
 
 	void HandleInput();
 
