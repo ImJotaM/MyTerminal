@@ -134,10 +134,15 @@ Terminal::Terminal() {
 
 	currentdir = fs::current_path();
 
-	textCursor.w = static_cast<float>(font.width);
-	textCursor.h = static_cast<float>(font.height);
+	textCursor.frect.w = static_cast<float>(font.width);
+	textCursor.frect.h = static_cast<float>(font.height);
+	
+	UpdateCurrentTime();
+	textCursor.lastBlinkTime = currentTime;
 
 	RegisterCommands();
+
+	UpdateContent();
 
 }
 
@@ -149,15 +154,18 @@ Terminal::~Terminal() {
 	for (TextCache& texture : textCache) {
 		if (texture.texture) {
 			SDL_DestroyTexture(texture.texture);
+			texture.texture = nullptr;
 		}
 	}
-
 	textCache.clear();
 
 	TTF_CloseFont(font.ttf_font);
-
+	font.ttf_font = nullptr;
+	
 	SDL_DestroyRenderer(renderer);
+	renderer = nullptr;
 	SDL_DestroyWindow(window.sdl_window);
+	window.sdl_window = nullptr;
 
 	TTF_Quit();
 	SDL_Quit();
@@ -180,6 +188,8 @@ void Terminal::Init() {
 			break;
 		}
 
+		UpdateCurrentTime();
+
 		ClearWindow();
 
 		DrawContent();
@@ -194,6 +204,10 @@ void Terminal::Init() {
 
 void Terminal::Print(const std::string& msg, SDL_Color text_color) {
 	history.emplace_back(msg, text_color, bgcolor);
+}
+
+void Terminal::UpdateCurrentTime() {
+	currentTime = SDL_GetTicks();
 }
 
 void Terminal::HandleEvents(SDL_Event& event) {
@@ -215,8 +229,16 @@ void Terminal::HandleEvents(SDL_Event& event) {
 
 	case SDL_EVENT_TEXT_INPUT:
 		userinput += event.text.text;
+		textCursor.cursorVisible = true;
+		textCursor.lastBlinkTime = SDL_GetTicks();
+		UpdateContent();
+		UpdateView();
 		break;
 
+	case SDL_EVENT_MOUSE_WHEEL:
+		scroll.scrollOffset += (event.wheel.y > 0 ? scroll.scrollStep : -scroll.scrollStep); // Adds the current scroll step.
+		scroll.scrollOffset = std::min(0, scroll.scrollOffset);
+		break;
 	}
 
 }
@@ -233,6 +255,9 @@ void Terminal::KeyHandler(SDL_KeyboardEvent& key) {
 		if (!userinput.empty()) {
 			userinput.pop_back();
 		}
+		textCursor.cursorVisible = true;
+		textCursor.lastBlinkTime = SDL_GetTicks();
+		UpdateContent();
 		break;
 
 	case SDLK_RETURN:
@@ -254,7 +279,7 @@ void Terminal::ClearWindow() {
 
 void Terminal::UpdateTextCache(const std::vector<Text>& out) {
 
-	for (size_t i = 0; i < out.size(); ++i) {
+	for (size_t i = 0; i < out.size(); i++) {
 		if (i >= textCache.size() || textCache[i].data.text != out[i].text) {
 			if (i >= textCache.size()) {
 				textCache.push_back({ out[i], nullptr });
@@ -266,18 +291,19 @@ void Terminal::UpdateTextCache(const std::vector<Text>& out) {
 			textCache[i].data = out[i];
 
 			SDL_Surface* temp_surface = TTF_RenderText_Shaded(font.ttf_font, out[i].text.c_str(), out[i].text.size(), out[i].color, out[i].shadecolor);
-			if (!temp_surface)
+			if (!temp_surface) {
 				continue;
+			}
 			
-			textCache[i].texture = SDL_CreateTextureFromSurface(renderer, temp_surface);
-			if (!textCache[i].texture)
-				continue;
-
 			Vector2f size = { static_cast<float>(temp_surface->w), static_cast<float>(temp_surface->h) };
 			textCache[i].size = size;
 
+			textCache[i].texture = SDL_CreateTextureFromSurface(renderer, temp_surface);
 			SDL_DestroySurface(temp_surface);
 
+			if (!textCache[i].texture) {
+				continue;
+			}
 		}
 	}
 
@@ -331,12 +357,15 @@ void Terminal::FormatContent(std::vector<Text>& out) {
 	treatedText.clear();
 }
 
-void Terminal::DrawContent() {
-
-	Vector2 cursor = { 0, 0 };
-	std::vector<Text> out = { };
+void Terminal::UpdateContent() {
+	out.clear();
 	FormatContent(out);
 	UpdateTextCache(out);
+}
+
+void Terminal::DrawContent() {
+
+	Vector2 cursor = { 0, scroll.scrollOffset };
 
 	int mw = 0;
 	
@@ -349,24 +378,32 @@ void Terminal::DrawContent() {
 
 		TTF_MeasureString(font.ttf_font, cached.data.text.c_str(), cached.data.text.size(), 0, &mw, nullptr);
 		
-		SDL_FRect frect = { 0.f, static_cast<float>(cursor.y), cached.size.x, cached.size.y };
-		
-		SDL_RenderTexture(renderer, cached.texture, nullptr, &frect);
+		if (cursor.y + font.height >= 0 && cursor.y <= window.height) {
+			SDL_FRect frect = { 0.f, static_cast<float>(cursor.y), cached.size.x, cached.size.y };
+			SDL_RenderTexture(renderer, cached.texture, nullptr, &frect);
+		}
 
 		cursor.y += font.height;
 
 	}
 
 	if (mw >= window.width) {
-		textCursor.x = 0.f;
-		textCursor.y = static_cast<float>(cursor.y);
+		textCursor.frect.x = 0.f;
+		textCursor.frect.y = static_cast<float>(cursor.y);
 	} else {
-		textCursor.x = static_cast<float>(mw);
-		textCursor.y = static_cast<float>(cursor.y - font.height);
+		textCursor.frect.x = static_cast<float>(mw);
+		textCursor.frect.y = static_cast<float>(cursor.y - font.height);
 	}
 
-	SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
-	SDL_RenderFillRect(renderer, &textCursor);
+	if (currentTime - textCursor.lastBlinkTime >= textCursor.blinkInterval) {
+		textCursor.cursorVisible = !textCursor.cursorVisible;
+		textCursor.lastBlinkTime = currentTime;
+	}
+
+	if (textCursor.cursorVisible) {
+		SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+		SDL_RenderFillRect(renderer, &textCursor.frect);
+	}
 
 }
 
@@ -394,11 +431,20 @@ void Terminal::HandleInput() {
 
 	userinput.clear();
 
+	UpdateContent();
+
+	UpdateView();
+
+}
+
+void Terminal::UpdateView() {
+	scroll.scrollOffset = std::min(0, -(static_cast<int>(out.size()) * font.height - window.height));
 }
 
 void Terminal::RegisterCommands() {
-	commandlist["cd"] = [this](int argc, std::vector<std::string> argv) { COMMAND_CD(argc, argv); };
-	commandlist["ls"] = [this](int argc, std::vector<std::string> argv) { COMMAND_LS(argc, argv); };
-	commandlist["cls"] = [this](int argc, std::vector<std::string> argv) { COMMAND_CLS(argc, argv); };
+	commandlist["cd"]     = [this](int argc, std::vector<std::string> argv) { COMMAND_CD     (argc, argv); };
+	commandlist["ls"]     = [this](int argc, std::vector<std::string> argv) { COMMAND_LS     (argc, argv); };
+	commandlist["cls"]    = [this](int argc, std::vector<std::string> argv) { COMMAND_CLS    (argc, argv); };
+	commandlist["mkdir"]  = [this](int argc, std::vector<std::string> argv) { COMMAND_MKDIR  (argc, argv); };
+	commandlist["rm"]     = [this](int argc, std::vector<std::string> argv) { COMMAND_RM     (argc, argv); };
 }
-

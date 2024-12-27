@@ -63,13 +63,30 @@ private:
 		Vector2f size = { 0.f, 0.f };
 	};
 
-	SDL_FRect textCursor = { 0.f, 0.f, 0.f, 0.f };
+	struct ScrollData {
+		
+		int scrollOffset = 0;
+		int scrollStep = 20;
+	
+	} scroll;
+
+
+	struct TextCursor {
+		SDL_FRect frect = { 0.f, 0.f, 0.f, 0.f };
+		Uint64 blinkInterval = 600;
+		bool cursorVisible = true;
+		Uint64 lastBlinkTime = 0;
+	} textCursor;
 
 	std::vector<Text> history = { };
 	std::string userinput = "";
 	fs::path currentdir = "";
+	std::vector<Text> out = { };
 	SDL_Color bgcolor = { 0xc, 0xc, 0xc, 0xff };
 	
+	Uint64 currentTime = 0;
+	void UpdateCurrentTime();
+
 	std::unordered_map<std::string, std::function<void(int, std::vector<std::string>)>> commandlist;
 
 	void HandleEvents(SDL_Event& event);
@@ -80,18 +97,20 @@ private:
 
 	std::vector<TextCache> textCache = { };
 	void UpdateTextCache(const std::vector<Text>& out);
-
 	void FormatContent(std::vector<Text>& out);
+	void UpdateContent();
 	void DrawContent();
 
 	void HandleInput();
 
+	void UpdateView();
+
 	void RegisterCommands();
 
-	void COMMAND_CD(int argc, std::vector<std::string>);
-	void COMMAND_LS(int argc, std::vector<std::string>);
-	void COMMAND_CLS(int argc, std::vector<std::string>);
-	void COMMAND_MKDIR(int argc, std::vector<std::string>);
-	void COMMAND_RM(int argc, std::vector<std::string>);
+	void COMMAND_CD     (int argc, std::vector<std::string> argv);
+	void COMMAND_LS     (int argc, std::vector<std::string> argv);
+	void COMMAND_CLS    (int argc, std::vector<std::string> argv);
+	void COMMAND_MKDIR  (int argc, std::vector<std::string> argv);
+	void COMMAND_RM     (int argc, std::vector<std::string> argv);
 
 };
