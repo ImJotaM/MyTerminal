@@ -14,9 +14,11 @@ public:
 private:
 
 	enum TerminalMode {
+
 		NONE = -1,
 		TERMINAL = 0,
-		TEXT_EDITOR = 1
+		EDITOR = 1
+
 	} terminal_mode = NONE;
 
 	struct WindowData {
@@ -28,6 +30,7 @@ private:
 		int height = 600;
 		Vector2 position = { 0, 0 };
 		const SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+		SDL_Color bgcolor = { 0xc, 0xc, 0xc, 0xff };
 
 		bool shouldclose = false;
 
@@ -62,9 +65,11 @@ private:
 	};
 
 	struct TextCache {
+
 		Text data = { };
 		SDL_Texture* texture = nullptr;
 		Vector2f size = { 0.f, 0.f };
+
 	};
 
 	struct ScrollData {
@@ -75,10 +80,12 @@ private:
 	} scroll;
 
 	struct TextCursor {
+
 		SDL_FRect frect = { 0.f, 0.f, 0.f, 0.f };
 		Uint64 blinkInterval = 600;
 		bool cursorVisible = true;
 		Uint64 lastBlinkTime = 0;
+
 	} textCursor;
 
 	SDL_Renderer* renderer = nullptr;
@@ -87,7 +94,7 @@ private:
 	std::string userinput = "";
 	fs::path currentdir = "";
 	std::vector<Text> out = { };
-	SDL_Color bgcolor = { 0xc, 0xc, 0xc, 0xff };
+	std::vector<TextCache> textCache = { };
 
 	Uint64 currentTime = 0;
 	void UpdateCurrentTime();
@@ -96,15 +103,16 @@ private:
 
 	void HandleEvents(SDL_Event& event);
 	void KeyHandler(SDL_KeyboardEvent& key);
+	void TextInputHandler(SDL_TextInputEvent& text);
 
 	void CloseWindow();
 	void ClearWindow();
 	void ResizeWindow(int win_width, int win_height);
-
-	std::vector<TextCache> textCache = { };
-	void UpdateTextCache(const std::vector<Text>& out);
-	void FormatContent(std::vector<Text>& out);
+	
 	void UpdateContent();
+	void TerminalFormatContent();
+	void UpdateTextCache();
+	
 	void DrawContent();
 
 	void HandleInput();
@@ -121,5 +129,18 @@ private:
 	void COMMAND_RM      (int argc, std::vector<std::string> argv);
 	void COMMAND_MKFILE  (int argc, std::vector<std::string> argv);
 	void COMMAND_RUN     (int argc, std::vector<std::string> argv);
+	void COMMAND_EDIT    (int argc, std::vector<std::string> argv);
+
+	// ** Editor mode **
+
+	fs::path currentFileDir = "";
+	std::fstream currentFile;
+	std::vector<std::string> fileBuffer = { };
+	std::vector<Text> fileContent = { };
+
+	void StartEditorMode(fs::path& filedir);
+	void ExitEditorMode();
+	
+	void EditorFormatContent();
 
 };

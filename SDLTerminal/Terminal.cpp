@@ -3,7 +3,9 @@
 Terminal::Terminal() {
 
 	terminal_mode = TERMINAL;
-	
+	SDL_Log("INFO: Current terminal mode -> [TERMINAL]");
+	SDL_Log("");
+
 	if (!SDL_Init(SDL_INIT_VIDEO)) {
 
 		SDL_Log("STATUS: SDL_Video -> [ERROR].");
@@ -132,21 +134,33 @@ Terminal::Terminal() {
 
 	} else {
 		SDL_Log("STATUS: Renderer -> [OK]");
+		SDL_Log("");
 	}
 
 	currentdir = fs::current_path();
+	SDL_Log("INFO: Terminal starter directory -> %s", currentdir.string().c_str());
 
 	textCursor.frect.w = static_cast<float>(font.width);
 	textCursor.frect.h = static_cast<float>(font.height);
-	
+	SDL_Log("INFO: Text cursor dimensions -> [%.1f x %.1f]", textCursor.frect.w, textCursor.frect.h);
+
 	scroll.scrollStep = font.height;
-	
+	SDL_Log("INFO: Scroll step -> %d", scroll.scrollStep);
+
 	UpdateCurrentTime();
 	textCursor.lastBlinkTime = currentTime;
+	SDL_Log("INFO: Starter terminal time -> %d ms", static_cast<int>(currentTime));
 
 	RegisterCommands();
+	SDL_Log("INFO: Registered commands: ");
+	SDL_Log("");
+	for (const auto& [key, value] : commandlist) {
+		SDL_Log("-  %s", key.c_str());
+	}
 
 	UpdateContent();
+
+	SDL_Log("");
 
 }
 
@@ -207,7 +221,7 @@ void Terminal::Init() {
 }
 
 void Terminal::Print(const std::string& msg, SDL_Color text_color) {
-	content.emplace_back(msg, text_color, bgcolor);
+	content.emplace_back(msg, text_color, window.bgcolor);
 }
 
 void Terminal::UpdateCurrentTime() {
@@ -231,11 +245,7 @@ void Terminal::HandleEvents(SDL_Event& event) {
 		break;
 
 	case SDL_EVENT_TEXT_INPUT:
-		userinput += event.text.text;
-		textCursor.cursorVisible = true;
-		textCursor.lastBlinkTime = SDL_GetTicks();
-		UpdateContent();
-		UpdateView();
+		TextInputHandler(event.text);
 		break;
 
 	case SDL_EVENT_MOUSE_WHEEL:
@@ -248,24 +258,64 @@ void Terminal::HandleEvents(SDL_Event& event) {
 
 void Terminal::KeyHandler(SDL_KeyboardEvent& key) {
 
-	switch (key.key) {
+	if (terminal_mode == TERMINAL) {
 
-	case SDLK_ESCAPE:
-		CloseWindow();
-		break;
+		switch (key.key) {
 
-	case SDLK_BACKSPACE:
-		if (!userinput.empty()) {
-			userinput.pop_back();
+		case SDLK_ESCAPE:
+
+			CloseWindow();
+			break;
+
+		case SDLK_BACKSPACE:
+
+			if (!userinput.empty()) {
+				userinput.pop_back();
+			}
+		
+			textCursor.cursorVisible = true;
+			textCursor.lastBlinkTime = SDL_GetTicks();
+			UpdateContent();
+
+			break;
+
+		case SDLK_RETURN:
+
+			HandleInput();
+			break;
+
 		}
+
+	} else if (terminal_mode == EDITOR) {
+
+		switch (key.key) {
+		
+		case SDLK_ESCAPE:
+			
+			ExitEditorMode();
+			break;
+
+		}
+
+	}
+
+}
+
+void Terminal::TextInputHandler(SDL_TextInputEvent& text) {
+
+	if (terminal_mode == TERMINAL) {
+
+		userinput += text.text;
 		textCursor.cursorVisible = true;
 		textCursor.lastBlinkTime = SDL_GetTicks();
+		
 		UpdateContent();
-		break;
+		UpdateView();
 
-	case SDLK_RETURN:
-		HandleInput();
-		break;
+	} else if (terminal_mode == EDITOR) {
+
+		UpdateContent();
+		UpdateView();
 
 	}
 
@@ -276,7 +326,7 @@ void Terminal::CloseWindow() {
 }
 
 void Terminal::ClearWindow() {
-	SDL_SetRenderDrawColor(renderer, bgcolor.r, bgcolor.g, bgcolor.b, bgcolor.a);
+	SDL_SetRenderDrawColor(renderer, window.bgcolor.r, window.bgcolor.g, window.bgcolor.b, window.bgcolor.a);
 	SDL_RenderClear(renderer);
 }
 
@@ -299,44 +349,20 @@ void Terminal::ResizeWindow(int win_width, int win_height) {
 
 }
 
-void Terminal::UpdateTextCache(const std::vector<Text>& out) {
+void Terminal::UpdateContent() {
 
-	for (size_t i = 0; i < out.size(); i++) {
-		if (i >= textCache.size() || textCache[i].data.text != out[i].text) {
-			if (i >= textCache.size()) {
-				textCache.push_back({ out[i], nullptr });
-			}
-			if (textCache[i].texture) {
-				SDL_DestroyTexture(textCache[i].texture);
-			}
+	out.clear();
 
-			textCache[i].data = out[i];
-
-			SDL_Surface* temp_surface = TTF_RenderText_Shaded(font.ttf_font, out[i].text.c_str(), out[i].text.size(), out[i].color, out[i].shadecolor);
-			if (!temp_surface) {
-				continue;
-			}
-			
-			Vector2f size = { static_cast<float>(temp_surface->w), static_cast<float>(temp_surface->h) };
-			textCache[i].size = size;
-
-			textCache[i].texture = SDL_CreateTextureFromSurface(renderer, temp_surface);
-			SDL_DestroySurface(temp_surface);
-
-			if (!textCache[i].texture) {
-				continue;
-			}
-		}
+	if (terminal_mode == TERMINAL) {
+		TerminalFormatContent();
+	} else if (terminal_mode == EDITOR) {
+		EditorFormatContent();
 	}
 
-	while (textCache.size() > out.size()) {
-		SDL_DestroyTexture(textCache.back().texture);
-		textCache.pop_back();
-	}
-
+	UpdateTextCache();
 }
 
-void Terminal::FormatContent(std::vector<Text>& out) {
+void Terminal::TerminalFormatContent() {
 
 	size_t maxCharPerLine = window.width / font.width;
 
@@ -345,7 +371,7 @@ void Terminal::FormatContent(std::vector<Text>& out) {
 	}
 
 	SDL_Color input_color = WHITE;
-	out.emplace_back(currentdir.string() + "> " + userinput, input_color, bgcolor);
+	out.emplace_back(currentdir.string() + "> " + userinput, input_color, window.bgcolor);
 
 	std::vector<Text> treatedText = { };
 
@@ -379,10 +405,85 @@ void Terminal::FormatContent(std::vector<Text>& out) {
 	treatedText.clear();
 }
 
-void Terminal::UpdateContent() {
-	out.clear();
-	FormatContent(out);
-	UpdateTextCache(out);
+void Terminal::EditorFormatContent() {
+
+	for (Text& text : fileContent) {
+		out.emplace_back(text.text, text.color, text.shadecolor);
+	}
+
+	std::vector<Text> treatedText = { };
+
+	for (const Text& text : out) {
+
+		size_t start = 0;
+
+		if (text.text.empty()) {
+			treatedText.emplace_back(text.text, text.color, text.shadecolor);
+			continue;
+		}
+
+		while (start < text.text.size()) {
+
+			size_t linebreak = text.text.find('\n', start);
+			size_t length;
+
+			if (linebreak != std::string::npos) {
+				length = linebreak - start;
+			} else {
+				length = text.text.size() - start;
+			}
+
+			treatedText.emplace_back(text.text.substr(start, length), text.color, text.shadecolor);
+
+			start += length;
+
+			if (linebreak != std::string::npos && start == linebreak) {
+				start++;
+			}
+		}
+
+	}
+
+	out = std::move(treatedText);
+	treatedText.clear();
+
+}
+
+void Terminal::UpdateTextCache() {
+
+	for (size_t i = 0; i < out.size(); i++) {
+		if (i >= textCache.size() || textCache[i].data.text != out[i].text) {
+			if (i >= textCache.size()) {
+				textCache.push_back({ out[i], nullptr });
+			}
+			if (textCache[i].texture) {
+				SDL_DestroyTexture(textCache[i].texture);
+			}
+
+			textCache[i].data = out[i];
+
+			SDL_Surface* temp_surface = TTF_RenderText_Shaded(font.ttf_font, out[i].text.c_str(), out[i].text.size(), out[i].color, out[i].shadecolor);
+			if (!temp_surface) {
+				continue;
+			}
+
+			Vector2f size = { static_cast<float>(temp_surface->w), static_cast<float>(temp_surface->h) };
+			textCache[i].size = size;
+
+			textCache[i].texture = SDL_CreateTextureFromSurface(renderer, temp_surface);
+			SDL_DestroySurface(temp_surface);
+
+			if (!textCache[i].texture) {
+				continue;
+			}
+		}
+	}
+
+	while (textCache.size() > out.size()) {
+		SDL_DestroyTexture(textCache.back().texture);
+		textCache.pop_back();
+	}
+
 }
 
 void Terminal::DrawContent() {
@@ -439,7 +540,7 @@ void Terminal::DrawContent() {
 
 void Terminal::HandleInput() {
 
-	content.emplace_back(currentdir.string() + "> " + userinput + "\n", WHITE, bgcolor);
+	content.emplace_back(currentdir.string() + "> " + userinput + "\n", WHITE, window.bgcolor);
 
 	std::vector<std::string> tokens = {};
 
@@ -476,11 +577,53 @@ void Terminal::UpdateView() {
 }
 
 void Terminal::RegisterCommands() {
+
 	commandlist["cd"]      = [this](int argc, std::vector<std::string> argv) { COMMAND_CD      (argc, argv); };
 	commandlist["ls"]      = [this](int argc, std::vector<std::string> argv) { COMMAND_LS      (argc, argv); };
 	commandlist["cls"]     = [this](int argc, std::vector<std::string> argv) { COMMAND_CLS     (argc, argv); };
 	commandlist["mkdir"]   = [this](int argc, std::vector<std::string> argv) { COMMAND_MKDIR   (argc, argv); };
 	commandlist["rm"]      = [this](int argc, std::vector<std::string> argv) { COMMAND_RM      (argc, argv); };
 	commandlist["mkfile"]  = [this](int argc, std::vector<std::string> argv) { COMMAND_MKFILE  (argc, argv); };
+	commandlist["run"]     = [this](int argc, std::vector<std::string> argv) { COMMAND_RUN     (argc, argv); };
+	commandlist["edit"]    = [this](int argc, std::vector<std::string> argv) { COMMAND_EDIT    (argc, argv); };
+
 }
 
+void Terminal::StartEditorMode(fs::path& filedir) {
+
+	SDL_Log("INFO: Current terminal mode -> [EDITOR]");
+	SDL_Log("");
+
+	terminal_mode = EDITOR;
+
+	currentFile.open(filedir, std::ios::in | std::ios::out);
+
+	if (!currentFile) {
+		ExitEditorMode();
+	}
+
+	std::string fline = "";
+	while (std::getline(currentFile, fline)) {
+		fileBuffer.push_back(fline);
+	}
+
+	for (const std::string& line : fileBuffer) {
+		fileContent.emplace_back(line, WHITE, window.bgcolor);
+	}
+
+}
+
+void Terminal::ExitEditorMode() {
+
+	if (currentFile) {
+		currentFile.close();
+	}
+
+	terminal_mode = TERMINAL;
+	SDL_Log("INFO: Current terminal mode -> [TERMINAL]");
+	SDL_Log("");
+
+	UpdateContent();
+	UpdateTextCache();
+
+}

@@ -187,7 +187,7 @@ void Terminal::COMMAND_RUN(int argc, std::vector<std::string> argv) {
 		return;
 	}
 
-	fs::path program = "";
+	fs::path program = argv[1];
 
 	if (!program.is_absolute()) {
 		program = currentdir / program;
@@ -195,16 +195,76 @@ void Terminal::COMMAND_RUN(int argc, std::vector<std::string> argv) {
 
 	program = fs::weakly_canonical(program);
 
+	if (!fs::exists(program)) {
+		out = "\"" + program.string() + "\" does not exist.\n\n";
+		Print(out, LIGHT_RED);
+		return;
+	}
+
+	if (program.extension() != ".exe") {
+		out = "\"" + program.string() + "\" is not an executable.\n\n";
+		Print(out, LIGHT_RED);
+		return;
+	}
+
 	STARTUPINFO si;
 	PROCESS_INFORMATION pi;
 
 	ZeroMemory(&si, sizeof(si));
 	si.cb = sizeof(si);
 	ZeroMemory(&pi, sizeof(pi));
+	
+	std::wstring wprogram = program.wstring();
+	LPWSTR lpwCommandLine = const_cast<LPWSTR>(wprogram.c_str());
 
-	CreateProcess(
-		program.c_str(),
-		
-	);
+	if (!CreateProcess(
+		NULL,
+		lpwCommandLine,
+		NULL,
+		NULL,
+		false,
+		CREATE_NEW_CONSOLE,
+		NULL,
+		NULL,
+		&si,
+		&pi
+	)) {
+		out = "Failed to run \"" + program.string() + "\".\n\n";
+		Print(out, LIGHT_RED);
+		return;
+	}
+
+	WaitForSingleObject(pi.hProcess, INFINITE);
+
+	if (pi.hProcess) CloseHandle(pi.hProcess);
+	if (pi.hThread) CloseHandle(pi.hThread);
+
+}
+
+void Terminal::COMMAND_EDIT(int argc, std::vector<std::string> argv) {
+
+	std::string out = "";
+
+	if (argc != 2) {
+		out = "Invalid number of arguments for command 'edit'.\n\n";
+		Print(out, LIGHT_RED);
+		return;
+	}
+
+	fs::path filedir = argv[1];
+
+	if (!filedir.is_absolute()) {
+		filedir = currentdir / filedir;
+	}
+
+	filedir = fs::weakly_canonical(filedir);
+
+	if (!fs::exists(filedir)) {
+		out = "\"" + filedir.string() + "\" does not exist.\n\n";
+		Print(out, LIGHT_RED);
+		return;
+	}
+
+	StartEditorMode(filedir);
 
 }

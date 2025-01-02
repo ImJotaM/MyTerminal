@@ -95,7 +95,6 @@
     <ClCompile Include="Commands.cpp" />
     <ClInclude Include="GlobalLibs.h" />
     <ClInclude Include="Terminal.h" />
-    <ClInclude Include="TextEditor.h" />
     <ClInclude Include="Types.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
