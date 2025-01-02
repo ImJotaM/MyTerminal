@@ -2,6 +2,8 @@
 
 Terminal::Terminal() {
 
+	terminal_mode = TERMINAL;
+	
 	if (!SDL_Init(SDL_INIT_VIDEO)) {
 
 		SDL_Log("STATUS: SDL_Video -> [ERROR].");
@@ -65,13 +67,37 @@ Terminal::Terminal() {
 			SDL_Log("STATUS: Display -> [OK].");
 			SDL_Log("INFO: Display size -> [%d x %d]", display.width, display.height);
 			SDL_Log("INFO: Display scale -> [%.0f%%]", display.scale * 100);
-			SDL_Log("");
 			
 		}
 
 	}
 
+	font.fontsize = 14 * display.scale;
+	font.ttf_font = TTF_OpenFont("resources/fonts/Consola.ttf", font.fontsize);
+
+	SDL_Log("");
+	if (!font.ttf_font) {
+
+		SDL_Log("STATUS: Default font (Consola) -> [ERROR]");
+		SDL_LogError(SDL_LOG_PRIORITY_INVALID, SDL_GetError());
+		SDL_Log("");
+
+	} else {
+
+		SDL_Surface* tmp_font_surface = TTF_RenderGlyph_Shaded(font.ttf_font, ' ', BLACK, BLACK);
+		font.width = tmp_font_surface->w;
+		font.height = tmp_font_surface->h;
+		SDL_DestroySurface(tmp_font_surface);
+
+		SDL_Log("STATUS: Default font (Consola) -> [OK]");
+		SDL_Log("INFO: Using font size (Consola) -> [%.2fpx]", font.fontsize);
+		SDL_Log("INFO: Using font dimensions (Consola) -> [%d x %d]", font.width, font.height);
+		SDL_Log("");
+
+	}
+
 	window.sdl_window = SDL_CreateWindow(window.title, window.width, window.height, window.flags);
+	ResizeWindow(window.width, window.height);
 
 	if (!window.sdl_window) {
 
@@ -108,34 +134,12 @@ Terminal::Terminal() {
 		SDL_Log("STATUS: Renderer -> [OK]");
 	}
 
-	font.fontsize = 14 * display.scale;
-	font.ttf_font = TTF_OpenFont("resources/CONSOLA.ttf", font.fontsize);
-
-	SDL_Log("");
-	if (!font.ttf_font) {
-		
-		SDL_Log("STATUS: Default font (CONSOLA) -> [ERROR]");
-		SDL_LogError(SDL_LOG_PRIORITY_INVALID, SDL_GetError());
-		SDL_Log("");
-		
-	} else {
-
-		SDL_Surface* tmp_font_surface = TTF_RenderGlyph_Shaded(font.ttf_font, ' ', BLACK, BLACK);
-		font.width = tmp_font_surface->w;
-		font.height = tmp_font_surface->h;
-		SDL_DestroySurface(tmp_font_surface);
-
-		SDL_Log("STATUS: Default font (CONSOLA) -> [OK]");
-		SDL_Log("INFO: Using font size (CONSOLA) -> [%.2fpx]", font.fontsize);
-		SDL_Log("INFO: Using font dimensions (CONSOLA) -> [%d x %d]", font.width, font.height);
-		SDL_Log("");
-
-	}
-
 	currentdir = fs::current_path();
 
 	textCursor.frect.w = static_cast<float>(font.width);
 	textCursor.frect.h = static_cast<float>(font.height);
+	
+	scroll.scrollStep = font.height;
 	
 	UpdateCurrentTime();
 	textCursor.lastBlinkTime = currentTime;
@@ -149,7 +153,7 @@ Terminal::Terminal() {
 Terminal::~Terminal() {
 
 	userinput.clear();
-	history.clear();
+	content.clear();
 
 	for (TextCache& texture : textCache) {
 		if (texture.texture) {
@@ -203,7 +207,7 @@ void Terminal::Init() {
 }
 
 void Terminal::Print(const std::string& msg, SDL_Color text_color) {
-	history.emplace_back(msg, text_color, bgcolor);
+	content.emplace_back(msg, text_color, bgcolor);
 }
 
 void Terminal::UpdateCurrentTime() {
@@ -219,8 +223,7 @@ void Terminal::HandleEvents(SDL_Event& event) {
 		break;
 
 	case SDL_EVENT_WINDOW_RESIZED:
-		window.width = event.window.data1;
-		window.height = event.window.data2;
+		ResizeWindow(static_cast<int>(event.window.data1), static_cast<int>(event.window.data2));
 		break;
 
 	case SDL_EVENT_KEY_DOWN:
@@ -236,7 +239,7 @@ void Terminal::HandleEvents(SDL_Event& event) {
 		break;
 
 	case SDL_EVENT_MOUSE_WHEEL:
-		scroll.scrollOffset += (event.wheel.y > 0 ? scroll.scrollStep : -scroll.scrollStep); // Adds the current scroll step.
+		scroll.scrollOffset += (event.wheel.y > 0 ? scroll.scrollStep : -scroll.scrollStep);
 		scroll.scrollOffset = std::min(0, scroll.scrollOffset);
 		break;
 	}
@@ -275,6 +278,25 @@ void Terminal::CloseWindow() {
 void Terminal::ClearWindow() {
 	SDL_SetRenderDrawColor(renderer, bgcolor.r, bgcolor.g, bgcolor.b, bgcolor.a);
 	SDL_RenderClear(renderer);
+}
+
+void Terminal::ResizeWindow(int win_width, int win_height) {
+	
+	int width = static_cast<int>(win_width);
+	int height = static_cast<int>(win_height);
+
+	if (!(width % font.width == 0)) {
+		width = (width / font.width) * font.width + font.width;
+	}
+
+	if (!(height % font.height == 0)) {
+		height = (height / font.height) * font.height + font.height;
+	}
+
+	SDL_SetWindowSize(window.sdl_window, width, height);
+	window.width = width;
+	window.height = height;
+
 }
 
 void Terminal::UpdateTextCache(const std::vector<Text>& out) {
@@ -318,7 +340,7 @@ void Terminal::FormatContent(std::vector<Text>& out) {
 
 	size_t maxCharPerLine = window.width / font.width;
 
-	for (Text& text : history) {
+	for (Text& text : content) {
 		out.emplace_back(text.text, text.color, text.shadecolor);
 	}
 
@@ -369,7 +391,9 @@ void Terminal::DrawContent() {
 
 	int mw = 0;
 	
-	for (const TextCache& cached : textCache) {
+	for (int i = 0; i < textCache.size(); i++) {
+
+		const TextCache& cached = textCache[i];
 
 		if (cached.data.text.empty()) {
 			cursor.y += font.height;
@@ -377,14 +401,20 @@ void Terminal::DrawContent() {
 		}
 
 		TTF_MeasureString(font.ttf_font, cached.data.text.c_str(), cached.data.text.size(), 0, &mw, nullptr);
-		
-		if (cursor.y + font.height >= 0 && cursor.y <= window.height) {
+
+		if (cursor.y + font.height >= 0 && cursor.y < window.height) {
+			
+			if (i == textCache.size() - 1) {
+				IsInputVisible = true;
+			} else {
+				IsInputVisible = false;
+			}
+
 			SDL_FRect frect = { 0.f, static_cast<float>(cursor.y), cached.size.x, cached.size.y };
 			SDL_RenderTexture(renderer, cached.texture, nullptr, &frect);
 		}
 
 		cursor.y += font.height;
-
 	}
 
 	if (mw >= window.width) {
@@ -409,7 +439,7 @@ void Terminal::DrawContent() {
 
 void Terminal::HandleInput() {
 
-	history.emplace_back(currentdir.string() + "> " + userinput + "\n", WHITE, bgcolor);
+	content.emplace_back(currentdir.string() + "> " + userinput + "\n", WHITE, bgcolor);
 
 	std::vector<std::string> tokens = {};
 
@@ -432,19 +462,25 @@ void Terminal::HandleInput() {
 	userinput.clear();
 
 	UpdateContent();
-
+	IsInputVisible = false;
 	UpdateView();
 
 }
 
 void Terminal::UpdateView() {
-	scroll.scrollOffset = std::min(0, -(static_cast<int>(out.size()) * font.height - window.height));
+	
+	if (!IsInputVisible) {
+		scroll.scrollOffset = std::min(0, -(static_cast<int>(out.size()) * font.height - window.height));
+	}
+	
 }
 
 void Terminal::RegisterCommands() {
-	commandlist["cd"]     = [this](int argc, std::vector<std::string> argv) { COMMAND_CD     (argc, argv); };
-	commandlist["ls"]     = [this](int argc, std::vector<std::string> argv) { COMMAND_LS     (argc, argv); };
-	commandlist["cls"]    = [this](int argc, std::vector<std::string> argv) { COMMAND_CLS    (argc, argv); };
-	commandlist["mkdir"]  = [this](int argc, std::vector<std::string> argv) { COMMAND_MKDIR  (argc, argv); };
-	commandlist["rm"]     = [this](int argc, std::vector<std::string> argv) { COMMAND_RM     (argc, argv); };
+	commandlist["cd"]      = [this](int argc, std::vector<std::string> argv) { COMMAND_CD      (argc, argv); };
+	commandlist["ls"]      = [this](int argc, std::vector<std::string> argv) { COMMAND_LS      (argc, argv); };
+	commandlist["cls"]     = [this](int argc, std::vector<std::string> argv) { COMMAND_CLS     (argc, argv); };
+	commandlist["mkdir"]   = [this](int argc, std::vector<std::string> argv) { COMMAND_MKDIR   (argc, argv); };
+	commandlist["rm"]      = [this](int argc, std::vector<std::string> argv) { COMMAND_RM      (argc, argv); };
+	commandlist["mkfile"]  = [this](int argc, std::vector<std::string> argv) { COMMAND_MKFILE  (argc, argv); };
 }
+

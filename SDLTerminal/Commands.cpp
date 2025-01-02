@@ -1,5 +1,6 @@
 #pragma once
 #include "Terminal.h"
+#include <Windows.h>
 
 void Terminal::COMMAND_CD(int argc, std::vector<std::string> argv) {
 	
@@ -64,7 +65,7 @@ void Terminal::COMMAND_CLS(int argc, std::vector<std::string> argv) {
 		return;
 	}
 
-	history.clear();
+	content.clear();
 
 }
 
@@ -134,5 +135,76 @@ void Terminal::COMMAND_RM(int argc, std::vector<std::string> argv) {
 			Print(out, LIGHT_RED);
 		}
 	}
+
+}
+
+void Terminal::COMMAND_MKFILE(int argc, std::vector<std::string> argv) {
+
+	std::string out = "";
+
+	if (argc != 2) {
+		out = "Invalid number of arguments for command 'mkfile'.\n\n";
+		Print(out, LIGHT_RED);
+		return;
+	}
+
+	fs::path newfile = argv[1];
+
+	if (!newfile.is_absolute()) {
+		newfile = currentdir / newfile;
+	}
+	newfile = fs::weakly_canonical(newfile);
+
+	if (fs::exists(newfile)) {
+
+		out = "\"" + newfile.string() + "\" already exist.\n\n";
+		Print(out, LIGHT_RED);
+
+	} else {
+
+		std::ofstream file(newfile);
+
+		if (!fs::exists(newfile)) {
+			out = "Failed to create \"" + newfile.string() + "\".\n\n";
+			Print(out, LIGHT_RED);
+		}
+
+		if (file) {
+			file.close();
+		}
+
+	}
+
+}
+
+void Terminal::COMMAND_RUN(int argc, std::vector<std::string> argv) {
+
+	std::string out = "";
+
+	if (argc != 2) {
+		out = "Invalid number of arguments for command 'run'.\n\n";
+		Print(out, LIGHT_RED);
+		return;
+	}
+
+	fs::path program = "";
+
+	if (!program.is_absolute()) {
+		program = currentdir / program;
+	}
+
+	program = fs::weakly_canonical(program);
+
+	STARTUPINFO si;
+	PROCESS_INFORMATION pi;
+
+	ZeroMemory(&si, sizeof(si));
+	si.cb = sizeof(si);
+	ZeroMemory(&pi, sizeof(pi));
+
+	CreateProcess(
+		program.c_str(),
+		
+	);
 
 }

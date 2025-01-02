@@ -13,7 +13,11 @@ public:
 
 private:
 
-	SDL_Renderer* renderer = nullptr;
+	enum TerminalMode {
+		NONE = -1,
+		TERMINAL = 0,
+		TEXT_EDITOR = 1
+	} terminal_mode = NONE;
 
 	struct WindowData {
 
@@ -38,7 +42,7 @@ private:
 
 	} display;
 
-	struct FontData {
+	struct Font {
 
 		float fontsize = 0;
 
@@ -64,12 +68,11 @@ private:
 	};
 
 	struct ScrollData {
-		
-		int scrollOffset = 0;
-		int scrollStep = 20;
-	
-	} scroll;
 
+		int scrollOffset = 0;
+		int scrollStep = 0;
+
+	} scroll;
 
 	struct TextCursor {
 		SDL_FRect frect = { 0.f, 0.f, 0.f, 0.f };
@@ -78,12 +81,14 @@ private:
 		Uint64 lastBlinkTime = 0;
 	} textCursor;
 
-	std::vector<Text> history = { };
+	SDL_Renderer* renderer = nullptr;
+
+	std::vector<Text> content = { };
 	std::string userinput = "";
 	fs::path currentdir = "";
 	std::vector<Text> out = { };
 	SDL_Color bgcolor = { 0xc, 0xc, 0xc, 0xff };
-	
+
 	Uint64 currentTime = 0;
 	void UpdateCurrentTime();
 
@@ -94,6 +99,7 @@ private:
 
 	void CloseWindow();
 	void ClearWindow();
+	void ResizeWindow(int win_width, int win_height);
 
 	std::vector<TextCache> textCache = { };
 	void UpdateTextCache(const std::vector<Text>& out);
@@ -104,13 +110,16 @@ private:
 	void HandleInput();
 
 	void UpdateView();
+	bool IsInputVisible = true;
 
 	void RegisterCommands();
 
-	void COMMAND_CD     (int argc, std::vector<std::string> argv);
-	void COMMAND_LS     (int argc, std::vector<std::string> argv);
-	void COMMAND_CLS    (int argc, std::vector<std::string> argv);
-	void COMMAND_MKDIR  (int argc, std::vector<std::string> argv);
-	void COMMAND_RM     (int argc, std::vector<std::string> argv);
+	void COMMAND_CD      (int argc, std::vector<std::string> argv);
+	void COMMAND_LS      (int argc, std::vector<std::string> argv);
+	void COMMAND_CLS     (int argc, std::vector<std::string> argv);
+	void COMMAND_MKDIR   (int argc, std::vector<std::string> argv);
+	void COMMAND_RM      (int argc, std::vector<std::string> argv);
+	void COMMAND_MKFILE  (int argc, std::vector<std::string> argv);
+	void COMMAND_RUN     (int argc, std::vector<std::string> argv);
 
 };
