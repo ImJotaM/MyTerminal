@@ -140,24 +140,26 @@ Terminal::Terminal() {
 	currentdir = fs::current_path();
 	SDL_Log("INFO: Terminal starter directory -> %s", currentdir.string().c_str());
 
-	textCursor.frect.w = static_cast<float>(font.width);
-	textCursor.frect.h = static_cast<float>(font.height);
-	SDL_Log("INFO: Text cursor dimensions -> [%.1f x %.1f]", textCursor.frect.w, textCursor.frect.h);
+	cursor.frect.w = static_cast<float>(font.width);
+	cursor.frect.h = static_cast<float>(font.height);
+	SDL_Log("INFO: Text cursor dimensions -> [%.1f x %.1f]", cursor.frect.w, cursor.frect.h);
 
 	scroll.scrollStep = font.height;
 	SDL_Log("INFO: Scroll step -> %d", scroll.scrollStep);
 
 	UpdateCurrentTime();
-	textCursor.lastBlinkTime = currentTime;
+	cursor.lastBlinkTime = currentTime;
 	SDL_Log("INFO: Starter terminal time -> %d ms", static_cast<int>(currentTime));
 
 	RegisterCommands();
 	SDL_Log("INFO: Registered commands: ");
 	SDL_Log("");
 	for (const auto& [key, value] : commandlist) {
-		SDL_Log("-  %s", key.c_str());
+		SDL_Log(" - %s", key.c_str());
 	}
 
+	UpdateViewport();
+	
 	UpdateContent();
 
 	SDL_Log("");
@@ -246,6 +248,7 @@ void Terminal::HandleEvents(SDL_Event& event) {
 
 	case SDL_EVENT_TEXT_INPUT:
 		TextInputHandler(event.text);
+		UpdateCursorFocus();
 		break;
 
 	case SDL_EVENT_MOUSE_WHEEL:
@@ -273,9 +276,9 @@ void Terminal::KeyHandler(SDL_KeyboardEvent& key) {
 				userinput.pop_back();
 			}
 		
-			textCursor.cursorVisible = true;
-			textCursor.lastBlinkTime = SDL_GetTicks();
+			cursor.Reset();
 			UpdateContent();
+			UpdateCursorFocus();
 
 			break;
 
@@ -295,27 +298,49 @@ void Terminal::KeyHandler(SDL_KeyboardEvent& key) {
 			ExitEditorMode();
 			break;
 
-		}
+		case SDLK_RIGHT:
 
+			cursor.Reset();
+			cursor.frect.x += font.width;
+			break;
+
+		case SDLK_LEFT:
+
+			cursor.Reset();
+			cursor.frect.x -= font.width;
+			break;
+
+		case SDLK_UP:
+
+			cursor.Reset();
+			cursor.frect.y -= font.height;
+			break;
+
+		case SDLK_DOWN:
+
+			cursor.Reset();
+			cursor.frect.y += font.height;
+			break;
+
+		}
+		
 	}
 
 }
 
 void Terminal::TextInputHandler(SDL_TextInputEvent& text) {
 
+	cursor.Reset();
+
 	if (terminal_mode == TERMINAL) {
 
 		userinput += text.text;
-		textCursor.cursorVisible = true;
-		textCursor.lastBlinkTime = SDL_GetTicks();
 		
 		UpdateContent();
-		UpdateView();
 
 	} else if (terminal_mode == EDITOR) {
 
 		UpdateContent();
-		UpdateView();
 
 	}
 
@@ -346,6 +371,8 @@ void Terminal::ResizeWindow(int win_width, int win_height) {
 	SDL_SetWindowSize(window.sdl_window, width, height);
 	window.width = width;
 	window.height = height;
+
+	UpdateViewport();
 
 }
 
@@ -488,52 +515,52 @@ void Terminal::UpdateTextCache() {
 
 void Terminal::DrawContent() {
 
-	Vector2 cursor = { 0, scroll.scrollOffset };
+	drawcursor = { 0, scroll.scrollOffset };
 
-	int mw = 0;
-	
 	for (int i = 0; i < textCache.size(); i++) {
 
 		const TextCache& cached = textCache[i];
 
 		if (cached.data.text.empty()) {
-			cursor.y += font.height;
+			drawcursor.y += font.height;
 			continue;
 		}
 
-		TTF_MeasureString(font.ttf_font, cached.data.text.c_str(), cached.data.text.size(), 0, &mw, nullptr);
+		if (drawcursor.y + font.height >= viewport.min_y && drawcursor.y < viewport.max_y) {
 
-		if (cursor.y + font.height >= 0 && cursor.y < window.height) {
-			
-			if (i == textCache.size() - 1) {
-				IsInputVisible = true;
-			} else {
-				IsInputVisible = false;
-			}
-
-			SDL_FRect frect = { 0.f, static_cast<float>(cursor.y), cached.size.x, cached.size.y };
+			SDL_FRect frect = { 0.f, static_cast<float>(drawcursor.y), cached.size.x, cached.size.y };
 			SDL_RenderTexture(renderer, cached.texture, nullptr, &frect);
+
 		}
 
-		cursor.y += font.height;
+		drawcursor.y += font.height;
 	}
 
-	if (mw >= window.width) {
-		textCursor.frect.x = 0.f;
-		textCursor.frect.y = static_cast<float>(cursor.y);
-	} else {
-		textCursor.frect.x = static_cast<float>(mw);
-		textCursor.frect.y = static_cast<float>(cursor.y - font.height);
+	if (terminal_mode == TERMINAL) {
+		
+		int mw = 0;
+		TTF_MeasureString(font.ttf_font, textCache.back().data.text.c_str(), textCache.back().data.text.size(), 0, &mw, nullptr);
+
+		if (mw >= window.width) {
+			cursor.frect.x = 0.f;
+			cursor.frect.y = static_cast<float>(drawcursor.y);
+		} else {
+			cursor.frect.x = static_cast<float>(mw);
+			cursor.frect.y = static_cast<float>(drawcursor.y - font.height);
+		}
+
 	}
 
-	if (currentTime - textCursor.lastBlinkTime >= textCursor.blinkInterval) {
-		textCursor.cursorVisible = !textCursor.cursorVisible;
-		textCursor.lastBlinkTime = currentTime;
+	//printf("\rDEBUG: draw cursor position -> [ %d, %d ] DEBUG: cursor position -> [ %.0f, %.0f ]", drawcursor.x, drawcursor.y, cursor.frect.x, cursor.frect.y);
+
+	if (currentTime - cursor.lastBlinkTime >= cursor.blinkInterval) {
+		cursor.cursorVisible = !cursor.cursorVisible;
+		cursor.lastBlinkTime = currentTime;
 	}
 
-	if (textCursor.cursorVisible) {
+	if (cursor.cursorVisible) {
 		SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
-		SDL_RenderFillRect(renderer, &textCursor.frect);
+		SDL_RenderFillRect(renderer, &cursor.frect);
 	}
 
 }
@@ -563,17 +590,36 @@ void Terminal::HandleInput() {
 	userinput.clear();
 
 	UpdateContent();
-	IsInputVisible = false;
-	UpdateView();
+	UpdateCursorFocus();
 
 }
 
-void Terminal::UpdateView() {
-	
-	if (!IsInputVisible) {
-		scroll.scrollOffset = std::min(0, -(static_cast<int>(out.size()) * font.height - window.height));
+void Terminal::UpdateCursorFocus() {
+
+	if (terminal_mode == TERMINAL) {
+
+		if (!IsCursorVisible()) {
+			printf("\rDEBUG: Is cursor visible -> [false]");
+			scroll.scrollOffset = std::min(0, -static_cast<int>());
+		} else{
+			printf("\rDEBUG: Is cursor visible -> [true]");
+		}
+
 	}
-	
+
+}
+
+bool Terminal::IsCursorVisible() {
+	return cursor.frect.y >= viewport.min_y && cursor.frect.y < viewport.max_y;
+}
+
+void Terminal::UpdateViewport() {
+
+	viewport.min_x = 0;
+	viewport.min_y = 0;
+	viewport.max_x = window.width;
+	viewport.max_y = window.height;
+
 }
 
 void Terminal::RegisterCommands() {
@@ -610,6 +656,12 @@ void Terminal::StartEditorMode(fs::path& filedir) {
 	for (const std::string& line : fileBuffer) {
 		fileContent.emplace_back(line, WHITE, window.bgcolor);
 	}
+
+	cursor.frect.x = 0.f;
+	cursor.frect.y = 0.f;
+
+	UpdateContent();
+	UpdateTextCache();
 
 }
 

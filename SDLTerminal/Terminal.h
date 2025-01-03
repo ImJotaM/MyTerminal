@@ -86,7 +86,23 @@ private:
 		bool cursorVisible = true;
 		Uint64 lastBlinkTime = 0;
 
-	} textCursor;
+		void Reset() {
+			cursorVisible = true;
+			lastBlinkTime = SDL_GetTicks();
+		}
+
+	} cursor;
+
+	struct ViewPort {
+
+		int min_x = 0;
+		int max_x = 0;
+		int min_y = 0;
+		int max_y = 0;
+
+	} viewport;
+
+	Vector2 drawcursor = { };
 
 	SDL_Renderer* renderer = nullptr;
 
@@ -117,8 +133,9 @@ private:
 
 	void HandleInput();
 
-	void UpdateView();
-	bool IsInputVisible = true;
+	void UpdateCursorFocus();
+	bool IsCursorVisible();
+	void UpdateViewport();
 
 	void RegisterCommands();
 
