@@ -102,6 +102,8 @@ private:
 
 	} viewport;
 
+private:
+
 	Vector2 drawcursor = { };
 
 	SDL_Renderer* renderer = nullptr;
@@ -135,6 +137,8 @@ private:
 
 	void UpdateCursorFocus();
 	bool IsCursorVisible();
+	void UpdateCursorPosition();
+
 	void UpdateViewport();
 
 	void RegisterCommands();
@@ -147,6 +151,8 @@ private:
 	void COMMAND_MKFILE  (int argc, std::vector<std::string> argv);
 	void COMMAND_RUN     (int argc, std::vector<std::string> argv);
 	void COMMAND_EDIT    (int argc, std::vector<std::string> argv);
+
+private:
 
 	// ** Editor mode **
 

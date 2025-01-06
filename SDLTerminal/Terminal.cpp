@@ -248,12 +248,15 @@ void Terminal::HandleEvents(SDL_Event& event) {
 
 	case SDL_EVENT_TEXT_INPUT:
 		TextInputHandler(event.text);
-		UpdateCursorFocus();
 		break;
 
 	case SDL_EVENT_MOUSE_WHEEL:
+		
 		scroll.scrollOffset += (event.wheel.y > 0 ? scroll.scrollStep : -scroll.scrollStep);
 		scroll.scrollOffset = std::min(0, scroll.scrollOffset);
+		
+		UpdateCursorPosition();
+		
 		break;
 	}
 
@@ -278,7 +281,6 @@ void Terminal::KeyHandler(SDL_KeyboardEvent& key) {
 		
 			cursor.Reset();
 			UpdateContent();
-			UpdateCursorFocus();
 
 			break;
 
@@ -387,6 +389,9 @@ void Terminal::UpdateContent() {
 	}
 
 	UpdateTextCache();
+	UpdateCursorPosition();
+	UpdateCursorFocus();
+
 }
 
 void Terminal::TerminalFormatContent() {
@@ -517,7 +522,7 @@ void Terminal::DrawContent() {
 
 	drawcursor = { 0, scroll.scrollOffset };
 
-	for (int i = 0; i < textCache.size(); i++) {
+	for (size_t i = 0; i < textCache.size(); i++) {
 
 		const TextCache& cached = textCache[i];
 
@@ -535,23 +540,6 @@ void Terminal::DrawContent() {
 
 		drawcursor.y += font.height;
 	}
-
-	if (terminal_mode == TERMINAL) {
-		
-		int mw = 0;
-		TTF_MeasureString(font.ttf_font, textCache.back().data.text.c_str(), textCache.back().data.text.size(), 0, &mw, nullptr);
-
-		if (mw >= window.width) {
-			cursor.frect.x = 0.f;
-			cursor.frect.y = static_cast<float>(drawcursor.y);
-		} else {
-			cursor.frect.x = static_cast<float>(mw);
-			cursor.frect.y = static_cast<float>(drawcursor.y - font.height);
-		}
-
-	}
-
-	//printf("\rDEBUG: draw cursor position -> [ %d, %d ] DEBUG: cursor position -> [ %.0f, %.0f ]", drawcursor.x, drawcursor.y, cursor.frect.x, cursor.frect.y);
 
 	if (currentTime - cursor.lastBlinkTime >= cursor.blinkInterval) {
 		cursor.cursorVisible = !cursor.cursorVisible;
@@ -590,7 +578,6 @@ void Terminal::HandleInput() {
 	userinput.clear();
 
 	UpdateContent();
-	UpdateCursorFocus();
 
 }
 
@@ -599,10 +586,7 @@ void Terminal::UpdateCursorFocus() {
 	if (terminal_mode == TERMINAL) {
 
 		if (!IsCursorVisible()) {
-			printf("\rDEBUG: Is cursor visible -> [false]");
-			scroll.scrollOffset = std::min(0, -static_cast<int>());
-		} else{
-			printf("\rDEBUG: Is cursor visible -> [true]");
+			scroll.scrollOffset = std::min(0, -static_cast<int>(textCache.size() * font.height - viewport.max_y));
 		}
 
 	}
@@ -610,7 +594,30 @@ void Terminal::UpdateCursorFocus() {
 }
 
 bool Terminal::IsCursorVisible() {
-	return cursor.frect.y >= viewport.min_y && cursor.frect.y < viewport.max_y;
+	return cursor.frect.y >= viewport.min_y && cursor.frect.y < viewport.max_y - font.height;
+}
+
+void Terminal::UpdateCursorPosition() {
+
+	if (terminal_mode == TERMINAL) {
+
+		int mw = 0;
+		TTF_MeasureString(font.ttf_font, textCache.back().data.text.c_str(), textCache.back().data.text.size(), 0, &mw, nullptr);
+
+		if (mw >= window.width) {
+			cursor.frect.x = 0.f;
+			cursor.frect.y = static_cast<float>(textCache.size() * font.height + scroll.scrollOffset);
+		} else {
+			cursor.frect.x = static_cast<float>(mw);
+			cursor.frect.y = static_cast<float>(textCache.size() * font.height + scroll.scrollOffset - font.height);
+		}
+
+	} else if (terminal_mode == EDITOR){
+
+
+
+	}
+
 }
 
 void Terminal::UpdateViewport() {
@@ -661,7 +668,6 @@ void Terminal::StartEditorMode(fs::path& filedir) {
 	cursor.frect.y = 0.f;
 
 	UpdateContent();
-	UpdateTextCache();
 
 }
 
@@ -676,6 +682,5 @@ void Terminal::ExitEditorMode() {
 	SDL_Log("");
 
 	UpdateContent();
-	UpdateTextCache();
 
 }
